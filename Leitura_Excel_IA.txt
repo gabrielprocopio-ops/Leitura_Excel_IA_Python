@@ -1,0 +1,72 @@
+import pandas as pd
+from openai import OpenAI
+import os
+import textwrap
+
+# Configurações da API da Groq
+os.environ["OPENAI_API_KEY"] = "INSIERA SUA KEY"
+
+client = OpenAI(
+    api_key=os.environ["OPENAI_API_KEY"],
+    base_url="https://api.groq.com/openai/v1"
+)
+
+# Carregar o Excel
+arquivo = r"CAMINHO DO ARQUIVO"
+df = pd.read_excel(arquivo, sheet_name="Planilha1")
+
+# Verificar se a coluna existe
+if "NOME DA COLUNA" not in df.columns:
+    raise Exception("A coluna 'x' não foi encontrada na planilha.")
+
+# Limpar Células Vazias
+observacoes = (
+    df["Observação"]
+    .dropna()
+    .astype(str)
+    .map(str.strip)
+)
+observacoes = observacoes[observacoes != ""].tolist()
+
+# Unir tudo
+texto_unificado = "\n".join(observacoes)
+
+# Quebrar o texto em partes de no máximo 15000 caracteres (~3750 tokens)
+partes = textwrap.wrap(texto_unificado, width=15000, break_long_words=False, break_on_hyphens=False)
+
+resumos_parciais = []
+
+# Resumir cada parte
+for i, parte in enumerate(partes, start=1):
+    print(f"▶️ Resumindo parte {i}/{len(partes)}...")
+
+    response = client.chat.completions.create(
+        model="llama3-70b-8192",
+        messages=[
+            {"role": "system", "content": "Você é um assistente que resume observações de atendimento de forma clara e objetiva."},
+            {"role": "user", "content": f"Leia essas observações e gere um resumo claro e conciso:\n\n{parte}"}
+        ],
+        temperature=0.3,
+        max_tokens=1000
+    )
+    
+    resumo = response.choices[0].message.content.strip()
+    resumos_parciais.append(resumo)
+
+# Resumo final com base nos resumos parciais
+resumo_geral_input = "\n\n".join(resumos_parciais)
+resposta_final = client.chat.completions.create(
+    model="llama3-70b-8192",
+    messages=[
+        {"role": "system", "content": "Você é um assistente que compila resumos em um único resumo final claro e objetivo."},
+        {"role": "user", "content": f"Esses são resumos parciais das observações. Gere um resumo final geral com base neles:\n\n{resumo_geral_input}"}
+    ],
+    temperature=0.3,
+    max_tokens=1000
+)
+
+resumo_final = resposta_final.choices[0].message.content.strip()
+
+# Mostrar o resumo final
+print("\n✅ RESUMO FINAL DAS OBSERVAÇÕES:")
+print(resumo_final)
